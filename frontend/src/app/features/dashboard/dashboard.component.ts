@@ -121,7 +121,7 @@ import { AuthService } from '../../core/services/auth.service';
                  class="glass-card ticket-item" style="padding:20px;display:block;text-decoration:none;color:inherit">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
                   <span style="font-size:1.3rem">🎟️</span>
-                  <span class="badge" [class]="ticket.status === 'valid' ? 'badge-success' : ticket.status === 'used' ? 'badge-info' : 'badge-danger'">
+                  <span class="badge" [class]="(ticket.status === 'active' || ticket.status === 'valid') ? 'badge-success' : ticket.status === 'used' ? 'badge-info' : 'badge-danger'">
                     {{ ticket.status }}
                   </span>
                 </div>
@@ -171,7 +171,7 @@ export class DashboardComponent implements OnInit {
     });
   }
 
-  get validTickets() { return this.myTickets.filter(t => t.status === 'valid').length; }
+  get validTickets() { return this.myTickets.filter(t => t.status === 'active' || t.status === 'valid').length; }
   get usedTickets() { return this.myTickets.filter(t => t.status === 'used').length; }
   get eventsAttended() { return new Set(this.myTickets.map(t => t.event_id)).size; }
   get totalSold() { return this.myEvents.reduce((sum, e) => sum + e.tickets_sold, 0); }

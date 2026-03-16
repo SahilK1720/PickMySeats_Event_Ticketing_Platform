@@ -22,68 +22,84 @@ export interface PaymentDetails {
   imports: [CommonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="modal-backdrop" (click)="onBackdropClick($event)">
-      <div class="modal-card glass-card" (click)="$event.stopPropagation()">
+    <div class="modal-backdrop checkout-backdrop" (click)="onBackdropClick($event)">
+      <div class="checkout-card" (click)="$event.stopPropagation()">
         <!-- Header -->
-        <div class="modal-header">
-          <div>
-            <h2 style="margin:0;font-size:1.3rem">💳 Complete Payment</h2>
-            <p style="color:var(--text-muted);font-size:0.8rem;margin:4px 0 0">Secure Checkout · Seats locked</p>
+        <div class="checkout-header">
+          <div class="header-content">
+            <div class="header-icon-wrapper">
+              <span>🎟️</span>
+            </div>
+            <div>
+              <h2 class="checkout-title">Complete Payment</h2>
+              <p class="checkout-subtitle">Secure Checkout</p>
+            </div>
           </div>
           <div class="countdown-badge" [class.urgent]="timeLeft <= 60">
-            ⏳ {{ formatTime(timeLeft) }}
+            <span>⏳</span> {{ formatTime(timeLeft) }}
           </div>
         </div>
 
         <!-- Order Summary -->
-        <div class="order-summary">
-          <h3 style="font-size:0.9rem;color:var(--text-muted);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.05em">Order Summary</h3>
+        <div class="order-container">
+          <h3 class="section-title">Order Summary</h3>
           
           <div class="seats-list">
             @for (seat of payment.seats; track seat.id) {
               <div class="seat-item">
-                <span>{{ seat.row_label }}{{ seat.seat_number }}
+                <div class="seat-info">
+                  <span class="seat-icon">🪑</span>
+                  <span>{{ seat.row_label }}{{ seat.seat_number }}</span>
                   @if (seat.row_label === 'A' || seat.row_label === 'B') {
                     <span class="vip-tag">VIP</span>
                   }
-                </span>
-                <span>₹{{ getSeatPrice(seat) | number:'1.0-0' }}</span>
+                </div>
+                <span class="seat-price">₹{{ getSeatPrice(seat) | number:'1.0-0' }}</span>
               </div>
             }
           </div>
 
-          <div class="total-row">
-            <span style="color:var(--text-secondary)">Subtotal</span>
-            <span>₹{{ payment.baseAmount | number:'1.0-0' }}</span>
-          </div>
-          <div class="total-row">
-            <span style="color:var(--text-secondary)">Convenience Fee (2%)</span>
-            <span>₹{{ payment.convenienceFee | number:'1.2-2' }}</span>
-          </div>
-          <div class="total-row grand-total">
-            <span style="font-size:1.1rem;font-weight:700">Total</span>
-            <span class="price-highlight">₹{{ payment.totalAmount | number:'1.2-2' }}</span>
+          <div class="calculation-breakdown">
+            <div class="calc-row">
+              <span>Subtotal</span>
+              <span>₹{{ payment.baseAmount | number:'1.0-0' }}</span>
+            </div>
+            <div class="calc-row fee-row">
+              <span>Convenience Fee (2%)</span>
+              <span>₹{{ payment.convenienceFee | number:'1.2-2' }}</span>
+            </div>
+            <div class="divider-dashed"></div>
+            <div class="calc-row grand-total">
+              <span>Total</span>
+              <span class="price-highlight">₹{{ payment.totalAmount | number:'1.2-2' }}</span>
+            </div>
           </div>
         </div>
 
         <!-- Razorpay Section -->
         <div class="payment-section">
-          <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:20px;text-align:center">
-            Pay securely via Razorpay (Card, Netbanking, Wallet).
-          </p>
+          <div class="secure-badge">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/></svg>
+            Payments are 100% secure & encrypted
+          </div>
           
-          <button class="btn btn-primary btn-block razorpay-btn" (click)="payWithRazorpay()" [disabled]="processing">
-            @if (processing) {
-              <span class="spinner" style="width:18px;height:18px;border-width:2px;margin-right:8px"></span>
-              {{ statusMessage || 'Processing...' }}
-            } @else {
-              💳 Pay ₹{{ payment.totalAmount | number:'1.2-2' }} Now
-            }
-          </button>
-          
-          <button class="btn btn-secondary btn-block" (click)="onCancel()" [disabled]="processing" style="margin-top:12px">
-            Cancel
-          </button>
+          <div class="action-stack">
+            <button class="btn btn-primary razorpay-btn" (click)="payWithRazorpay()" [disabled]="processing">
+              @if (processing) {
+                <span class="spinner" style="width:18px;height:18px;border-width:2px;margin-right:8px"></span>
+                {{ statusMessage || 'Processing...' }}
+              } @else {
+                <span class="btn-content">
+                  <span>Pay ₹{{ payment.totalAmount | number:'1.2-2' }}</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8z"/></svg>
+                </span>
+              }
+            </button>
+            
+            <button class="cancel-link" (click)="onCancel()" [disabled]="processing">
+              Cancel and release seats
+            </button>
+          </div>
         </div>
 
         @if (error) {
@@ -93,63 +109,131 @@ export interface PaymentDetails {
     </div>
   `,
   styles: [`
-    .modal-backdrop {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.85);
-      backdrop-filter: blur(8px); z-index: 1000;
+    .checkout-backdrop {
+      position: fixed; inset: 0; background: rgba(8, 12, 16, 0.9);
+      backdrop-filter: blur(12px); z-index: 1000;
       display: flex; align-items: center; justify-content: center; padding: 16px;
     }
-    .modal-card {
+    .checkout-card {
       width: 100%; max-width: 440px; padding: 0;
       max-height: 95vh; overflow-y: auto;
-      border-radius: 20px; animation: fadeIn 0.25s ease;
+      border-radius: 24px;
+      background: linear-gradient(145deg, #1e293b, #0f172a);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+      animation: fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    .modal-header {
+    @keyframes fadeInUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+
+    .checkout-header {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 24px 24px 16px; border-bottom: 1px solid var(--border-glass);
+      padding: 24px 24px;
+      position: relative;
+      overflow: hidden;
     }
+    .checkout-header::after {
+      content: ''; position: absolute; top:0; left:0; right:0; height:1px;
+      background: linear-gradient(90deg, transparent, rgba(56,189,248,0.5), transparent);
+    }
+    .header-content { display: flex; align-items: center; gap: 14px; }
+    .header-icon-wrapper {
+      width: 44px; height: 44px; border-radius: 12px;
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem;  
+      box-shadow: inset 0 0 12px rgba(56, 189, 248, 0.2);
+    }
+    .checkout-title { margin: 0; font-size: 1.25rem; font-weight: 700; color: #f8fafc; }
+    .checkout-subtitle { margin: 2px 0 0; font-size: 0.8rem; color: #94a3b8; font-weight: 500; }
     .countdown-badge {
-      background: rgba(234,179,8,0.15); border: 1px solid rgba(234,179,8,0.4);
-      color: #eab308; padding: 6px 14px; border-radius: 20px;
-      font-weight: 700; font-size: 1rem; font-family: monospace;
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(234, 179, 8, 0.3);
+      color: #eab308; padding: 6px 12px; border-radius: 99px;
+      font-weight: 600; font-size: 0.9rem; font-family: monospace;
+      box-shadow: 0 0 15px rgba(234, 179, 8, 0.1);
     }
     .countdown-badge.urgent {
-      background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.4);
-      color: #ef4444; animation: pulse 1s infinite;
+      border-color: rgba(239, 68, 68, 0.5); color: #ef4444;
+      background: rgba(239, 68, 68, 0.1);
+      box-shadow: 0 0 15px rgba(239, 68, 68, 0.2);
+      animation: pulse 1s infinite;
     }
     @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.6; } }
 
-    .order-summary {
-      padding: 20px 24px;
-      border-bottom: 1px solid var(--border-glass);
+    .order-container {
+      margin: 0 20px;
+      background: rgba(15, 23, 42, 0.4);
+      border-radius: 16px;
+      padding: 20px 0;
+      position: relative;
     }
-    .seats-list { margin-bottom: 12px; }
+    .section-title {
+      font-size: 0.75rem; color: #64748b; margin: 0 20px 16px;
+      text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700;
+    }
+    
+    .seats-list { margin: 0 20px 16px; display: flex; flex-direction: column; gap: 10px; }
     .seat-item {
-      display: flex; justify-content: space-between;
-      padding: 6px 0; font-size: 0.9rem; color: var(--text-secondary);
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 14px; background: rgba(30, 41, 59, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.04); border-radius: 10px;
     }
+    .seat-info { display: flex; align-items: center; gap: 8px; font-weight: 500; color: #e2e8f0; font-size: 0.95rem; }
+    .seat-icon { font-size: 1rem; opacity: 0.8; }
     .vip-tag {
-      display: inline-block; background: #7c3aed; color: #fff;
-      font-size: 0.65rem; padding: 1px 5px; border-radius: 4px; margin-left: 6px;
-      vertical-align: middle;
+      background: linear-gradient(135deg, #a855f7, #6366f1); color: #fff;
+      font-size: 0.65rem; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+      letter-spacing: 0.05em; text-shadow: 0 1px 2px rgba(0,0,0,0.2);
     }
-    .total-row {
-      display: flex; justify-content: space-between;
-      padding: 6px 0; font-size: 0.9rem;
-      border-top: 1px solid rgba(255,255,255,0.04);
+    .seat-price { font-weight: 600; color: #cbd5e1; }
+
+    .calculation-breakdown { padding: 0 24px; }
+    .calc-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 0; font-size: 0.9rem; color: #94a3b8;
     }
-    .grand-total { padding-top: 12px; margin-top: 4px; }
+    .fee-row { font-size: 0.85rem; color: #64748b; }
+    .divider-dashed {
+      border-top: 1px dashed rgba(255,255,255,0.1); margin: 12px 0;
+    }
+    .grand-total { font-size: 1.15rem; font-weight: 700; color: #f8fafc; padding-bottom: 4px; }
     .price-highlight {
-      font-size: 1.4rem; font-weight: 700;
-      background: var(--accent-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      font-size: 1.5rem;
+      background: linear-gradient(to right, #38bdf8, #818cf8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
 
-    .payment-section {
-      padding: 24px;
+    .payment-section { padding: 24px; text-align: center; }
+    .secure-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      color: #10b981; font-size: 0.75rem; font-weight: 600;
+      margin-bottom: 20px; background: rgba(16, 185, 129, 0.1);
+      padding: 6px 14px; border-radius: 99px; border: 1px solid rgba(16, 185, 129, 0.2);
     }
-    .razorpay-btn { 
-      background: linear-gradient(135deg, #339aff, #0070f3);
-      height: 48px; font-size: 1rem;
+    .razorpay-btn {
+      background: linear-gradient(135deg, #0ea5e9, #6366f1);
+      border: none; box-shadow: 0 10px 25px -5px rgba(14, 165, 233, 0.4);
+      height: 52px; font-size: 1.05rem; font-weight: 700;
+      border-radius: 12px; transition: all 0.3s ease;
+      width: 100%; display: block;
     }
+    .razorpay-btn:hover {
+      transform: translateY(-2px); box-shadow: 0 15px 30px -5px rgba(14, 165, 233, 0.5);
+    }
+    .btn-content { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; }
+    
+    .action-stack {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 20px; width: 100%;
+    }
+    .cancel-link {
+      background: transparent; border: none; color: #64748b;
+      font-size: 0.95rem; font-weight: 500; cursor: pointer;
+      text-decoration: underline; text-decoration-color: transparent;
+      transition: all 0.2s; padding: 4px;
+    }
+    .cancel-link:hover { color: #94a3b8; text-decoration-color: currentColor; }
   `]
 })
 export class PaymentModalComponent implements OnInit, OnDestroy {

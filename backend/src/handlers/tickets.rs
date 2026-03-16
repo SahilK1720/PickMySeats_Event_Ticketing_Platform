@@ -2,13 +2,17 @@ use axum::{
     extract::{Path, State},
     Extension, Json,
 };
+use chrono::{Duration, Utc};
+use reqwest::Client;
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::event::Event;
 use crate::models::order::Order;
 use crate::models::seat::EventSeat;
-use crate::models::ticket::{PurchaseRequest, Ticket, TicketWithQr};
+use crate::models::ticket::{CancellationPreview, CancellationResult, PurchaseRequest, Ticket, TicketWithQr};
 use crate::utils::jwt::Claims;
 use crate::utils::qr;
 use crate::AppState;
@@ -51,12 +55,18 @@ pub async fn purchase_tickets(
 
         // Fraud: max 10 seats per user per event
         let existing_count = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM tickets WHERE event_id = $1 AND user_id = $2 AND status = 'valid'"
+            "SELECT COUNT(*) FROM tickets WHERE event_id = $1 AND user_id = $2 AND status = 'active'"
         )
         .bind(input.event_id)
         .bind(claims.sub)
         .fetch_one(&state.db)
         .await?;
+
+        if existing_count + quantity as i64 > 10 {
+            return Err(AppError::BadRequest(
+                format!("Maximum 10 tickets per user. You already have {}", existing_count)
+            ));
+        }
 
         let mut total = rust_decimal::Decimal::from(0);
         let mut ticket_types = Vec::new();
@@ -172,7 +182,7 @@ pub async fn purchase_tickets(
 
     // Fraud check
     let existing_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM tickets WHERE event_id = $1 AND user_id = $2 AND status = 'valid'"
+        "SELECT COUNT(*) FROM tickets WHERE event_id = $1 AND user_id = $2 AND status = 'active'"
     )
     .bind(input.event_id)
     .bind(claims.sub)
@@ -248,7 +258,10 @@ pub async fn my_tickets(
         SELECT 
             t.*,
             e.title as event_title,
-            e.event_date as event_date
+            e.event_date as event_date,
+            e.refund_policy as event_refund_policy,
+            e.ticket_price as event_ticket_price,
+            e.vip_price as event_vip_price
         FROM tickets t
         JOIN events e ON t.event_id = e.id
         WHERE t.user_id = $1 
@@ -282,6 +295,7 @@ pub async fn get_ticket_qr(
         qr_code_data: String,
         ticket_type: String,
         status: String,
+        refund_status: String,
         scanned_at: Option<chrono::DateTime<chrono::Utc>>,
         created_at: chrono::DateTime<chrono::Utc>,
         // Event fields
@@ -326,10 +340,14 @@ pub async fn get_ticket_qr(
         qr_code_data: data.qr_code_data,
         ticket_type: data.ticket_type,
         status: data.status,
+        refund_status: data.refund_status,
         scanned_at: data.scanned_at,
         created_at: data.created_at,
         event_title: Some(data.event_title.clone()),
         event_date: Some(data.event_date),
+        event_refund_policy: None,
+        event_ticket_price: None,
+        event_vip_price: None,
     };
 
     let first_image = data.event_images.and_then(|mut images| {
@@ -348,5 +366,354 @@ pub async fn get_ticket_qr(
         event_image: first_image,
         event_date: data.event_date,
         seat_label,
+    }))
+}
+
+#[derive(sqlx::FromRow)]
+struct TicketCancellationContext {
+    ticket_status: String,
+    ticket_type: String,
+    seat_id: Option<Uuid>,
+    event_id: Uuid,
+    event_date: chrono::DateTime<chrono::Utc>,
+    refund_policy: String,
+    ticket_price: Decimal,
+    vip_price: Option<Decimal>,
+    razorpay_payment_id: Option<String>,
+}
+
+fn compute_cancellation_decision(ctx: &TicketCancellationContext) -> (bool, Decimal, String, String) {
+    let cutoff = ctx.event_date - Duration::hours(24);
+    let now = Utc::now();
+    let within_window = now >= cutoff;
+    let refundable_event = ctx.refund_policy == "REFUNDABLE";
+
+    if !refundable_event {
+        return (
+            false,
+            Decimal::ZERO,
+            "none".to_string(),
+            "Non-refundable event: ticket can be cancelled, but no refund is issued.".to_string(),
+        );
+    }
+
+    if within_window {
+        return (
+            false,
+            Decimal::ZERO,
+            "none".to_string(),
+            "Cancellation happened within 24 hours of event start; no refund is issued.".to_string(),
+        );
+    }
+
+    let refund_amount = if ctx.ticket_type == "vip" {
+        ctx.vip_price.unwrap_or(ctx.ticket_price)
+    } else {
+        ctx.ticket_price
+    };
+
+    (
+        true,
+        refund_amount,
+        "pending".to_string(),
+        "Eligible for refund. Ticket price will be refunded; convenience fee is excluded.".to_string(),
+    )
+}
+
+/// GET /api/tickets/:id/cancellation-preview — calculate cancellation outcome
+pub async fn preview_ticket_cancellation(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<CancellationPreview>, AppError> {
+    let ctx = sqlx::query_as::<_, TicketCancellationContext>(
+        r#"
+        SELECT
+            t.status as ticket_status,
+            t.ticket_type,
+            t.seat_id,
+            e.id as event_id,
+            e.event_date,
+            e.refund_policy,
+            e.ticket_price,
+            e.vip_price,
+            o.razorpay_payment_id
+        FROM tickets t
+        JOIN events e ON e.id = t.event_id
+        JOIN orders o ON o.id = t.order_id
+        WHERE t.id = $1 AND t.user_id = $2
+        "#,
+    )
+    .bind(id)
+    .bind(claims.sub)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Ticket not found".to_string()))?;
+
+    if ctx.ticket_status != "active" && ctx.ticket_status != "valid" {
+        return Ok(Json(CancellationPreview {
+            ticket_id: id,
+            can_cancel: false,
+            refundable: false,
+            refund_amount: Decimal::ZERO,
+            refund_status_after_cancel: "none".to_string(),
+            reason: format!("Ticket is already {}", ctx.ticket_status),
+        }));
+    }
+
+    let (refundable, refund_amount, refund_status_after_cancel, reason) = compute_cancellation_decision(&ctx);
+
+    Ok(Json(CancellationPreview {
+        ticket_id: id,
+        can_cancel: true,
+        refundable,
+        refund_amount,
+        refund_status_after_cancel,
+        reason,
+    }))
+}
+
+/// POST /api/tickets/:id/cancel — cancel ticket and trigger refund if eligible
+pub async fn cancel_ticket(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<CancellationResult>, AppError> {
+    let mut tx = state.db.begin().await?;
+
+    let ctx = sqlx::query_as::<_, TicketCancellationContext>(
+        r#"
+        SELECT
+            t.status as ticket_status,
+            t.ticket_type,
+            t.seat_id,
+            e.id as event_id,
+            e.event_date,
+            e.refund_policy,
+            e.ticket_price,
+            e.vip_price,
+            o.razorpay_payment_id
+        FROM tickets t
+        JOIN events e ON e.id = t.event_id
+        JOIN orders o ON o.id = t.order_id
+        WHERE t.id = $1 AND t.user_id = $2
+        FOR UPDATE
+        "#,
+    )
+    .bind(id)
+    .bind(claims.sub)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Ticket not found".to_string()))?;
+
+    if ctx.ticket_status != "active" && ctx.ticket_status != "valid" {
+        return Err(AppError::BadRequest(format!("Ticket is already {}", ctx.ticket_status)));
+    }
+
+    let (refundable, refund_amount, initial_refund_status, reason) = compute_cancellation_decision(&ctx);
+
+    sqlx::query("UPDATE tickets SET status = 'cancelled', refund_status = $1 WHERE id = $2")
+        .bind(&initial_refund_status)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+    if let Some(seat_id) = ctx.seat_id {
+        sqlx::query(
+            "UPDATE event_seats SET status = 'available', locked_by = NULL, locked_until = NULL WHERE id = $1"
+        )
+        .bind(seat_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    sqlx::query(
+        "UPDATE events SET tickets_sold = GREATEST(tickets_sold - 1, 0), updated_at = NOW() WHERE id = $1"
+    )
+    .bind(ctx.event_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    if refundable && refund_amount > Decimal::ZERO {
+        let Some(payment_id) = ctx.razorpay_payment_id else {
+            sqlx::query("UPDATE tickets SET refund_status = 'none' WHERE id = $1")
+                .bind(id)
+                .execute(&state.db)
+                .await?;
+
+            return Ok(Json(CancellationResult {
+                ticket_id: id,
+                status: "cancelled".to_string(),
+                refund_status: "none".to_string(),
+                refund_amount: Decimal::ZERO,
+                message: "Ticket cancelled. Refund could not be initiated because payment reference is missing.".to_string(),
+            }));
+        };
+
+        let amount_paise = (refund_amount * Decimal::from(100_i32))
+            .round()
+            .to_u64()
+            .ok_or_else(|| AppError::Internal("Failed to compute refund amount in paise".to_string()))?;
+
+        let client = Client::new();
+        let response = client
+            .post(format!("https://api.razorpay.com/v1/payments/{}/refund", payment_id))
+            .basic_auth(&state.config.razorpay_key_id, Some(&state.config.razorpay_key_secret))
+            .json(&serde_json::json!({
+                "amount": amount_paise,
+                "notes": {
+                    "ticket_id": id.to_string(),
+                    "policy": "ticket_cancellation"
+                }
+            }))
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to reach Razorpay for refund: {}", e)))?;
+
+        if !response.status().is_success() {
+            let err_text = response.text().await.unwrap_or_default();
+
+            return Ok(Json(CancellationResult {
+                ticket_id: id,
+                status: "cancelled".to_string(),
+                refund_status: "pending".to_string(),
+                refund_amount,
+                message: format!("Ticket cancelled. Refund is pending because Razorpay refund failed: {}", err_text),
+            }));
+        }
+
+        if response
+            .json::<serde_json::Value>()
+            .await
+            .is_err()
+        {
+            return Ok(Json(CancellationResult {
+                ticket_id: id,
+                status: "cancelled".to_string(),
+                refund_status: "pending".to_string(),
+                refund_amount,
+                message: "Ticket cancelled. Refund request submitted but confirmation parsing failed; current status is pending.".to_string(),
+            }));
+        }
+
+        sqlx::query("UPDATE tickets SET refund_status = 'refunded' WHERE id = $1")
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+
+        return Ok(Json(CancellationResult {
+            ticket_id: id,
+            status: "cancelled".to_string(),
+            refund_status: "refunded".to_string(),
+            refund_amount,
+            message: "Ticket cancelled and refund processed (excluding convenience fee).".to_string(),
+        }));
+    }
+
+    Ok(Json(CancellationResult {
+        ticket_id: id,
+        status: "cancelled".to_string(),
+        refund_status: initial_refund_status,
+        refund_amount,
+        message: reason,
+    }))
+}
+
+/// GET /api/tickets/:id/refund-status — fetch latest refund status from Razorpay
+pub async fn sync_refund_status(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<CancellationResult>, AppError> {
+    let row = sqlx::query_as::<_, (String, String, Option<String>)>(
+        r#"
+        SELECT t.status, t.refund_status, o.razorpay_payment_id
+        FROM tickets t
+        JOIN orders o ON o.id = t.order_id
+        WHERE t.id = $1 AND t.user_id = $2
+        "#,
+    )
+    .bind(id)
+    .bind(claims.sub)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Ticket not found".to_string()))?;
+
+    let ticket_status = row.0;
+    let current_refund_status = row.1;
+    let razorpay_payment_id = row.2;
+
+    if ticket_status != "cancelled" {
+        return Ok(Json(CancellationResult {
+            ticket_id: id,
+            status: ticket_status,
+            refund_status: current_refund_status,
+            refund_amount: Decimal::ZERO,
+            message: "Refund status is available only for cancelled tickets.".to_string(),
+        }));
+    }
+
+    let Some(payment_id) = razorpay_payment_id else {
+        return Ok(Json(CancellationResult {
+            ticket_id: id,
+            status: "cancelled".to_string(),
+            refund_status: current_refund_status,
+            refund_amount: Decimal::ZERO,
+            message: "No payment reference found for this ticket.".to_string(),
+        }));
+    };
+
+    let client = Client::new();
+    let response = client
+        .get(format!("https://api.razorpay.com/v1/payments/{}/refunds", payment_id))
+        .basic_auth(&state.config.razorpay_key_id, Some(&state.config.razorpay_key_secret))
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to reach Razorpay: {}", e)))?;
+
+    if !response.status().is_success() {
+        let err_text = response.text().await.unwrap_or_default();
+        return Ok(Json(CancellationResult {
+            ticket_id: id,
+            status: "cancelled".to_string(),
+            refund_status: current_refund_status,
+            refund_amount: Decimal::ZERO,
+            message: format!("Could not fetch refund status from gateway: {}", err_text),
+        }));
+    }
+
+    let body = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to parse Razorpay response: {}", e)))?;
+
+    let gateway_status = body
+        .get("items")
+        .and_then(|v| v.as_array())
+        .and_then(|items| items.first())
+        .and_then(|item| item.get("status"))
+        .and_then(|v| v.as_str());
+
+    let mapped_status = match gateway_status {
+        Some("processed") => "refunded",
+        Some("pending") => "pending",
+        Some(_) => "pending",
+        None => current_refund_status.as_str(),
+    };
+
+    sqlx::query("UPDATE tickets SET refund_status = $1 WHERE id = $2")
+        .bind(mapped_status)
+        .bind(id)
+        .execute(&state.db)
+        .await?;
+
+    Ok(Json(CancellationResult {
+        ticket_id: id,
+        status: "cancelled".to_string(),
+        refund_status: mapped_status.to_string(),
+        refund_amount: Decimal::ZERO,
+        message: format!("Refund status synced: {}", mapped_status),
     }))
 }

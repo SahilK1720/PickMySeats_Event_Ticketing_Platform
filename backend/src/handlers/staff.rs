@@ -154,7 +154,7 @@ pub async fn validate_ticket(
         }));
     }
 
-    if ticket.status != "valid" {
+    if ticket.status != "active" && ticket.status != "valid" {
         return Ok(Json(ValidateTicketResponse {
             status: "INVALID_TICKET".to_string(),
             message: format!("Ticket is {}", ticket.status), // cancelled, etc.

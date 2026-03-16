@@ -47,6 +47,9 @@ import { PaymentModalComponent, PaymentDetails } from '../../../shared/payment-m
             <div>
               <h1 style="font-size:2rem;margin-bottom:8px">{{ event.title }}</h1>
               <span class="badge" [class]="getStatusClass(event.status)">{{ event.status }}</span>
+              <span class="badge" [class]="event.refund_policy === 'REFUNDABLE' ? 'badge-success' : 'badge-danger'" style="margin-left:8px">
+                {{ event.refund_policy === 'REFUNDABLE' ? 'Refundable Event' : 'Non-Refundable Event' }}
+              </span>
               @if (event.seat_map_enabled) {
                 <span class="badge badge-info" style="margin-left:8px">🪑 Seat Selection</span>
               }
@@ -107,6 +110,24 @@ import { PaymentModalComponent, PaymentDetails } from '../../../shared/payment-m
                   <div class="detail-value">{{ event.seat_rows }} rows × {{ event.seat_columns }} seats</div>
                 </div>
               </div>
+            }
+          </div>
+
+          <div class="glass-card" style="padding:18px;margin-top:20px;background:rgba(255,255,255,0.03)">
+            @if (event.refund_policy === 'NON_REFUNDABLE') {
+              <p style="margin:0 0 8px;color:#fca5a5;font-weight:600">Non-Refundable Event</p>
+              <p style="margin:0;color:var(--text-secondary)">
+                Once a ticket is purchased, the attendee will not receive any refund if they cancel.
+              </p>
+            } @else {
+              <p style="margin:0 0 8px;color:#86efac;font-weight:600">Refundable Event</p>
+              <p style="margin:0;color:var(--text-secondary)">
+                If the attendee cancels their ticket, they will receive a refund excluding the convenience fee.
+              </p>
+              <p style="margin:10px 0 0;color:var(--text-muted)">
+                Refunds are allowed only if the ticket is cancelled at least 24 hours before the event start time.
+                If cancelled within 24 hours of the event start time, no refund will be issued.
+              </p>
             }
           </div>
 

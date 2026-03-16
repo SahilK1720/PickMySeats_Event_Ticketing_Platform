@@ -122,6 +122,17 @@ import { ImageCropperComponent, CroppedEvent } from '../../../shared/image-cropp
             </div>
           </div>
 
+          <div class="form-group">
+            <label>Refund Policy *</label>
+            <select class="form-control" [(ngModel)]="refundPolicy" name="refund_policy" required>
+              <option value="REFUNDABLE">Refundable Event</option>
+              <option value="NON_REFUNDABLE">Non-Refundable Event</option>
+            </select>
+            <small class="form-hint">
+              Refunds are only eligible when ticket cancellation happens at least 24 hours before event start.
+            </small>
+          </div>
+
           <!-- ── Seat Layout Toggle ────────────────────────────────────── -->
           <div class="seat-toggle-card">
             <div class="seat-toggle-header" (click)="toggleSeatMap()">
@@ -359,6 +370,7 @@ export class EventCreateComponent implements OnInit {
   maxTickets: number | null = null;
   ticketPrice: number | null = null;
   vipPrice: number | null = null;
+  refundPolicy: 'REFUNDABLE' | 'NON_REFUNDABLE' = 'NON_REFUNDABLE';
   loading = false;
   error = '';
 
@@ -610,6 +622,7 @@ export class EventCreateComponent implements OnInit {
       seat_rows: this.seatMapEnabled ? this.seatRows! : undefined,
       seat_columns: this.seatMapEnabled ? this.seatColumns! : undefined,
       seat_layout: this.seatMapEnabled ? this.seatLayout : undefined,
+      refund_policy: this.refundPolicy,
     };
 
     this.eventService.createEvent(payload).subscribe({

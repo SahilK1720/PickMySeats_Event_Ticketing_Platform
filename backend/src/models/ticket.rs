@@ -13,6 +13,7 @@ pub struct Ticket {
     pub qr_code_data: String,
     pub ticket_type: String,
     pub status: String,
+    pub refund_status: String,
     pub scanned_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     // Joined fields
@@ -20,6 +21,31 @@ pub struct Ticket {
     pub event_title: Option<String>,
     #[sqlx(default)]
     pub event_date: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub event_refund_policy: Option<String>,
+    #[sqlx(default)]
+    pub event_ticket_price: Option<rust_decimal::Decimal>,
+    #[sqlx(default)]
+    pub event_vip_price: Option<rust_decimal::Decimal>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CancellationPreview {
+    pub ticket_id: Uuid,
+    pub can_cancel: bool,
+    pub refundable: bool,
+    pub refund_amount: rust_decimal::Decimal,
+    pub refund_status_after_cancel: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CancellationResult {
+    pub ticket_id: Uuid,
+    pub status: String,
+    pub refund_status: String,
+    pub refund_amount: rust_decimal::Decimal,
+    pub message: String,
 }
 
 #[derive(Debug, Deserialize)]

@@ -122,6 +122,16 @@ async fn main() {
         });
     }
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            tracing::error!("Failed to bind to {}: {}", addr, e);
+            tracing::error!("Another ScanTix backend instance may already be running on this port.");
+            return;
+        }
+    };
+
+    if let Err(e) = axum::serve(listener, app).await {
+        tracing::error!("Server failed: {}", e);
+    }
 }

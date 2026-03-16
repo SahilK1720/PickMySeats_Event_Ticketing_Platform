@@ -94,6 +94,9 @@ pub async fn create_event(
     if input.max_tickets <= 0 {
         return Err(AppError::BadRequest("max_tickets must be positive".to_string()));
     }
+    if input.refund_policy != "REFUNDABLE" && input.refund_policy != "NON_REFUNDABLE" {
+        return Err(AppError::BadRequest("refund_policy must be REFUNDABLE or NON_REFUNDABLE".to_string()));
+    }
 
     let seat_map_enabled = input.seat_map_enabled.unwrap_or(false);
     if seat_map_enabled {
@@ -110,8 +113,8 @@ pub async fn create_event(
     let event = sqlx::query_as::<_, Event>(
         r#"INSERT INTO events (title, description, location, venue_id, organizer_id, event_date,
                                ticket_price, vip_price, max_tickets, status,
-                               seat_map_enabled, seat_rows, seat_columns, seat_layout, image_urls)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'published', $10, $11, $12, $13, $14)
+                       seat_map_enabled, seat_rows, seat_columns, seat_layout, image_urls, refund_policy)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'published', $10, $11, $12, $13, $14, $15)
            RETURNING *"#,
     )
     .bind(&input.title)
@@ -128,6 +131,7 @@ pub async fn create_event(
     .bind(input.seat_columns)
     .bind(input.seat_layout.unwrap_or_else(|| "grid".to_string()))
     .bind(input.image_urls.unwrap_or_default())
+    .bind(&input.refund_policy)
     .fetch_one(&state.db)
     .await?;
 
@@ -150,6 +154,11 @@ pub async fn update_event(
     if existing.organizer_id != claims.sub && claims.role != "admin" {
         return Err(AppError::Forbidden("Not authorized to update this event".to_string()));
     }
+    if let Some(policy) = input.refund_policy.as_deref() {
+        if policy != "REFUNDABLE" && policy != "NON_REFUNDABLE" {
+            return Err(AppError::BadRequest("refund_policy must be REFUNDABLE or NON_REFUNDABLE".to_string()));
+        }
+    }
 
     let event = sqlx::query_as::<_, Event>(
         r#"UPDATE events SET
@@ -166,6 +175,7 @@ pub async fn update_event(
             seat_columns = COALESCE($12, seat_columns),
             seat_layout = COALESCE($13, seat_layout),
             image_urls = COALESCE($14, image_urls),
+            refund_policy = COALESCE($15, refund_policy),
             updated_at = NOW()
            WHERE id = $9 RETURNING *"#
     )
@@ -183,6 +193,7 @@ pub async fn update_event(
     .bind(input.seat_columns)
     .bind(input.seat_layout)
     .bind(input.image_urls)
+    .bind(input.refund_policy)
     .fetch_one(&state.db)
     .await?;
 
