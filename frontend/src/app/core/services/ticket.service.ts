@@ -12,11 +12,32 @@ export interface Ticket {
     qr_code_data: string;
     ticket_type: 'standard' | 'vip';
     status: string;
+    refund_status: 'none' | 'pending' | 'refunded';
     scanned_at: string | null;
     created_at: string;
     // Joined fields
     event_title?: string;
     event_date?: string;
+    event_refund_policy?: 'REFUNDABLE' | 'NON_REFUNDABLE';
+    event_ticket_price?: string;
+    event_vip_price?: string | null;
+}
+
+export interface CancellationPreview {
+    ticket_id: string;
+    can_cancel: boolean;
+    refundable: boolean;
+    refund_amount: string;
+    refund_status_after_cancel: 'none' | 'pending' | 'refunded';
+    reason: string;
+}
+
+export interface CancellationResult {
+    ticket_id: string;
+    status: 'cancelled';
+    refund_status: 'none' | 'pending' | 'refunded';
+    refund_amount: string;
+    message: string;
 }
 
 export interface TicketWithQr {
@@ -59,9 +80,21 @@ export class TicketService {
         return this.http.get<TicketWithQr>(`${environment.apiUrl}/tickets/${id}/qr`);
     }
 
+    getCancellationPreview(id: string): Observable<CancellationPreview> {
+        return this.http.get<CancellationPreview>(`${environment.apiUrl}/tickets/${id}/cancellation-preview`);
+    }
+
+    cancelTicket(id: string): Observable<CancellationResult> {
+        return this.http.post<CancellationResult>(`${environment.apiUrl}/tickets/${id}/cancel`, {});
+    }
+
     validateTicket(qrData: string): Observable<ValidateResponse> {
         return this.http.post<ValidateResponse>(`${environment.apiUrl}/validate`, {
             qr_data: qrData
         });
+    }
+
+    syncRefundStatus(id: string): Observable<CancellationResult> {
+        return this.http.get<CancellationResult>(`${environment.apiUrl}/tickets/${id}/refund-status`);
     }
 }

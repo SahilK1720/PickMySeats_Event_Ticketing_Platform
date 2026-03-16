@@ -66,7 +66,7 @@ pub async fn validate_ticket(
                 attendee_name: None,
             }));
         }
-        "valid" => {} // continue
+        "active" | "valid" => {} // continue
         _ => {
             return Ok(Json(ValidateResponse {
                 valid: false,

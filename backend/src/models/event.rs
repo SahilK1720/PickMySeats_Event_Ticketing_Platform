@@ -23,6 +23,7 @@ pub struct Event {
     pub seat_columns: Option<i32>,
     pub seat_layout: String,
     pub image_urls: Vec<String>,
+    pub refund_policy: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -42,6 +43,7 @@ pub struct CreateEvent {
     pub seat_columns: Option<i32>,
     pub seat_layout: Option<String>,
     pub image_urls: Option<Vec<String>>,
+    pub refund_policy: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,6 +61,7 @@ pub struct UpdateEvent {
     pub seat_columns: Option<i32>,
     pub seat_layout: Option<String>,
     pub image_urls: Option<Vec<String>>,
+    pub refund_policy: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

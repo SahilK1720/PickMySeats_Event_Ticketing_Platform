@@ -21,6 +21,7 @@ export interface ScanEvent {
     seat_columns: number | null;
     seat_layout: 'grid' | 'stadium';
     image_urls: string[];
+    refund_policy: 'REFUNDABLE' | 'NON_REFUNDABLE';
     created_at: string;
     updated_at: string;
 }
@@ -39,6 +40,7 @@ export interface CreateEventPayload {
     seat_columns?: number;
     seat_layout?: 'grid' | 'stadium';
     image_urls?: string[];
+    refund_policy: 'REFUNDABLE' | 'NON_REFUNDABLE';
 }
 
 export interface UpdateEventPayload {
@@ -52,6 +54,7 @@ export interface UpdateEventPayload {
     status?: string;
     seat_layout?: 'grid' | 'stadium';
     image_urls?: string[];
+    refund_policy?: 'REFUNDABLE' | 'NON_REFUNDABLE';
 }
 
 export interface EventStats {

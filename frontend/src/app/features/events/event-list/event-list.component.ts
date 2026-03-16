@@ -122,6 +122,10 @@ import { DomSanitizer, SafeStyle } from '@angular/platform-browser';
                   <h3 style="font-size:1.15rem;font-family:'Outfit',sans-serif;line-height:1.3">{{ event.title }}</h3>
                 </div>
 
+                <span class="badge" [class]="event.refund_policy === 'REFUNDABLE' ? 'badge-success' : 'badge-danger'" style="margin-bottom:10px">
+                  {{ event.refund_policy === 'REFUNDABLE' ? 'Refundable Event' : 'Non-Refundable Event' }}
+                </span>
+
                 @if (event.location) {
                   <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:8px">📍 {{ event.location }}</p>
                 }

@@ -151,14 +151,16 @@ pub async fn verify_and_book(
         .unwrap_or(event.ticket_price * rust_decimal::Decimal::from(seat_ids.len() as i64));
 
         let order = sqlx::query_as::<_, Order>(
-            "INSERT INTO orders (user_id, event_id, total_amount, quantity, ticket_type, order_status) 
-             VALUES ($1, $2, $3, $4, $5, 'paid') RETURNING *"
+              "INSERT INTO orders (user_id, event_id, total_amount, quantity, ticket_type, order_status, razorpay_order_id, razorpay_payment_id) 
+               VALUES ($1, $2, $3, $4, $5, 'paid', $6, $7) RETURNING *"
         )
         .bind(claims.sub)
         .bind(input.event_id)
         .bind(total_amount)
         .bind(seat_ids.len() as i32)
         .bind("mixed")
+           .bind(&input.razorpay_order_id)
+           .bind(&input.razorpay_payment_id)
         .fetch_one(&mut *tx)
         .await?;
 
@@ -223,14 +225,16 @@ pub async fn verify_and_book(
         let mut tx = state.db.begin().await?;
 
         let order = sqlx::query_as::<_, Order>(
-            "INSERT INTO orders (user_id, event_id, total_amount, quantity, ticket_type, order_status) 
-             VALUES ($1, $2, $3, $4, $5, 'paid') RETURNING *"
+              "INSERT INTO orders (user_id, event_id, total_amount, quantity, ticket_type, order_status, razorpay_order_id, razorpay_payment_id) 
+               VALUES ($1, $2, $3, $4, $5, 'paid', $6, $7) RETURNING *"
         )
         .bind(claims.sub)
         .bind(input.event_id)
         .bind(total)
         .bind(quantity)
         .bind(ticket_type)
+           .bind(&input.razorpay_order_id)
+           .bind(&input.razorpay_payment_id)
         .fetch_one(&mut *tx)
         .await?;
 

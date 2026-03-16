@@ -13,5 +13,7 @@ pub struct Order {
     pub quantity: i32,
     pub ticket_type: String,
     pub status: String,
+    pub razorpay_order_id: Option<String>,
+    pub razorpay_payment_id: Option<String>,
     pub created_at: DateTime<Utc>,
 }
