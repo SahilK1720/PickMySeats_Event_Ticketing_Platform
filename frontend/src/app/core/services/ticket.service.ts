@@ -77,7 +77,7 @@ export class TicketService {
     }
 
     getTicketQr(id: string): Observable<TicketWithQr> {
-        return this.http.get<TicketWithQr>(`${environment.apiUrl}/tickets/${id}/qr`);
+        return this.http.get<TicketWithQr>(`${environment.apiUrl}/tickets/${id}/qr?t=${Date.now()}`);
     }
 
     getCancellationPreview(id: string): Observable<CancellationPreview> {
