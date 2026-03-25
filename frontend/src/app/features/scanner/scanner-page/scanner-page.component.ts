@@ -117,6 +117,8 @@ export class ScannerPageComponent implements OnInit, OnDestroy {
   private scanning = false;
   private codeReader: any = null;
   private resetTimer: ReturnType<typeof setTimeout> | null = null;
+  private frameLoopId: number | null = null;
+  private stream: MediaStream | null = null;
 
   constructor(private route: ActivatedRoute, private staffService: StaffService, private cdr: ChangeDetectorRef) {}
 
@@ -151,14 +153,54 @@ export class ScannerPageComponent implements OnInit, OnDestroy {
 
   private async startCamera() {
     try {
-      const { BrowserMultiFormatReader } = await import('@zxing/browser');
-      this.codeReader = new BrowserMultiFormatReader();
       const video = this.videoEl?.nativeElement;
       if (!video) { this.cameraError = true; this.cdr.detectChanges(); return; }
-      await this.codeReader.decodeFromVideoDevice(null, video, (result: any) => {
-        if (result && !this.scanning) this.onQrDetected(result.getText());
+
+      // Request camera permission explicitly
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
       });
-    } catch { this.cameraError = true; this.cdr.detectChanges(); }
+      video.srcObject = this.stream;
+      await video.play();
+
+      // Dynamically import zxing decoder
+      const { BrowserMultiFormatReader } = await import('@zxing/browser');
+      this.codeReader = new BrowserMultiFormatReader();
+
+      // Use a canvas-based frame loop for reliable detection
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d')!;
+
+      const tick = () => {
+        if (this.pageState !== 'SCANNING') return;
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          try {
+            const result = this.codeReader.decodeFromCanvas(canvas);
+            if (result && !this.scanning) {
+              // Null out frameLoopId before pausing so scheduleReset can restart the loop
+              this.frameLoopId = null;
+              this.onQrDetected(result.getText());
+              return; // pause loop during API call; scheduleReset restores it
+            }
+          } catch { /* no QR in frame — normal, keep looping */ }
+        }
+        this.frameLoopId = requestAnimationFrame(tick);
+      };
+      this.frameLoopId = requestAnimationFrame(tick);
+    } catch (err) {
+      console.error('Camera error:', err);
+      this.cameraError = true;
+      this.cdr.detectChanges();
+    }
+  }
+
+  private stopCamera() {
+    if (this.frameLoopId !== null) { cancelAnimationFrame(this.frameLoopId); this.frameLoopId = null; }
+    if (this.stream) { this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
+    try { this.codeReader?.reset?.(); } catch {}
   }
 
   private onQrDetected(qrData: string) {
@@ -183,7 +225,27 @@ export class ScannerPageComponent implements OnInit, OnDestroy {
   private scheduleReset() {
     if (this.resetTimer) clearTimeout(this.resetTimer);
     this.resetTimer = setTimeout(() => {
-      this.scanResult = 'IDLE'; this.attendeeName = null; this.scanning = false; this.cdr.detectChanges();
+      this.scanResult = 'IDLE'; this.attendeeName = null; this.scanning = false;
+      // Resume frame loop after reset
+      if (this.frameLoopId === null && this.stream && this.pageState === 'SCANNING') {
+        const video = this.videoEl?.nativeElement;
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d')!;
+        const tick = () => {
+          if (this.pageState !== 'SCANNING') return;
+          if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            try {
+              const result = this.codeReader?.decodeFromCanvas(canvas);
+              if (result && !this.scanning) { this.onQrDetected(result.getText()); return; }
+            } catch {}
+          }
+          this.frameLoopId = requestAnimationFrame(tick);
+        };
+        this.frameLoopId = requestAnimationFrame(tick);
+      }
+      this.cdr.detectChanges();
     }, 2500);
   }
 
@@ -195,6 +257,6 @@ export class ScannerPageComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     if (this.resetTimer) clearTimeout(this.resetTimer);
-    try { this.codeReader?.reset?.(); } catch {}
+    this.stopCamera();
   }
 }
