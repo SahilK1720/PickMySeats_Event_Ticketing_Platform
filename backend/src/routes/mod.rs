@@ -60,7 +60,9 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/tickets/:id/qr", get(handlers::tickets::get_ticket_qr))
         .route("/api/tickets/:id/cancellation-preview", get(handlers::tickets::preview_ticket_cancellation))
         .route("/api/tickets/:id/cancel", post(handlers::tickets::cancel_ticket))
+        .route("/api/tickets/:id/transfer", post(handlers::tickets::transfer_ticket))
             .route("/api/tickets/:id/refund-status", get(handlers::tickets::sync_refund_status))
+        .route("/api/events/:id/my-ticket-count", get(handlers::tickets::my_ticket_count_for_event))
         .route("/api/analytics/sales/:event_id", get(handlers::analytics::sales_stream))
         // Staff management (organizer, JWT-protected)
         .route(

@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule, ActivatedRoute } from '@angular/router';
+import { FormsModule } from '@angular/forms';
 import { TicketService, Ticket, TicketWithQr, CancellationPreview } from '../../../core/services/ticket.service';
 import { environment } from '../../../../environments/environment';
 import { LanyardComponent } from '../../../shared/components/lanyard/lanyard.component';
@@ -8,13 +9,13 @@ import { LanyardComponent } from '../../../shared/components/lanyard/lanyard.com
 @Component({
   selector: 'app-my-tickets',
   standalone: true,
-  imports: [CommonModule, RouterModule, LanyardComponent],
+  imports: [CommonModule, RouterModule, FormsModule, LanyardComponent],
   template: `
+    <app-lanyard [rightOffset]="60"></app-lanyard>
     <div class="page-container animate-fadeIn">
       <div class="page-header" style="position: relative; z-index: 10;">
         <h1 style="position: relative; z-index: 100;">🎟️ <span class="gradient-text">My Tickets</span></h1>
         <p style="position: relative; z-index: 100;">View and manage your purchased tickets</p>
-        <app-lanyard [rightOffset]="60"></app-lanyard>
       </div>
 
       <!-- Organizer Cancellation Banners -->
@@ -33,6 +34,34 @@ import { LanyardComponent } from '../../../shared/components/lanyard/lanyard.com
               <div style="display:flex; align-items:center; gap:12px;">
                 <button class="btn btn-secondary btn-sm" (click)="scrollToEvent(event.id)">View Tickets</button>
                 <button (click)="dismissNotification(event.id, $event)" 
+                        style="background: none; border: none; color: #9ca3af; cursor: pointer; padding: 6px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; border-radius: 50%;"
+                        onmouseover="this.style.color='#fff'; this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.color='#9ca3af'; this.style.background='none'">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+
+        <!-- Received Ticket Banners -->
+        <div class="received-ticket-banners" style="margin-bottom:32px; display: flex; flex-direction: column; gap: 16px;">
+          @for (ticket of receivedTicketsNotifs; track ticket.id) {
+            <div class="glass-card banner-item animate-fadeIn" style="border-left:4px solid #a855f7;background:rgba(168,85,247,0.1);padding:20px;display:flex;justify-content:space-between;align-items:center;gap:20px;">
+              <div style="display:flex;gap:16px;align-items:center">
+                <span style="font-size:2rem">🎁</span>
+                <div>
+                  <h3 style="margin:0;color:#e9d5ff;font-size:1.1rem">Ticket Received!</h3>
+                  <p style="margin:4px 0 0;color:var(--text-secondary);font-size:0.9rem">
+                    {{ ticket.sender_name || 'Someone' }} has transferred a ticket for <strong>{{ ticket.event_title }}</strong> to you.
+                  </p>
+                </div>
+              </div>
+              <div style="display:flex; align-items:center; gap:12px;">
+                <button class="btn btn-primary btn-sm" (click)="scrollToTicket(ticket.id)">View Ticket</button>
+                <button (click)="dismissTransfer(ticket.id, $event)" 
                         style="background: none; border: none; color: #9ca3af; cursor: pointer; padding: 6px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; border-radius: 50%;"
                         onmouseover="this.style.color='#fff'; this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.color='#9ca3af'; this.style.background='none'">
                   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -126,8 +155,14 @@ import { LanyardComponent } from '../../../shared/components/lanyard/lanyard.com
 
                 <!-- Footer: Status and Action -->
                 <div class="card-footer">
-                    <div class="status-badge" [class.cancelled]="ticket.status === 'cancelled'" [class.used]="ticket.status === 'used'" [class.active]="ticket.status === 'active' || ticket.status === 'valid'">
-                      @if (ticket.status === 'cancelled') {
+                    <div class="status-badge" 
+                         [class.cancelled]="ticket.status === 'cancelled'" 
+                         [class.used]="ticket.status === 'used'" 
+                         [class.active]="(ticket.status === 'active' || ticket.status === 'valid') && ticket.transfer_status !== 'transferred'"
+                         [class.transferred]="ticket.transfer_status === 'transferred'">
+                      @if (ticket.transfer_status === 'transferred') {
+                        🤝 Transferred
+                      } @else if (ticket.status === 'cancelled') {
                         @if (ticket.cancellation_type === 'organizer' || (ticket.event_status === 'cancelled' && ticket.cancellation_type !== 'user')) {
                           Organizer Cancelled
                         } @else {
@@ -256,11 +291,28 @@ import { LanyardComponent } from '../../../shared/components/lanyard/lanyard.com
                     Refresh Refund Status
                   </button>
                 </div>
+              } @else if (selectedTicket.transfer_status === 'transferred') {
+                <div class="qr-wrapper" style="padding: 12px; position: relative;">
+                  <div style="filter: blur(8px); opacity: 0.5;">
+                    <img [src]="'data:image/png;base64,' + qrData.qr_image_base64" alt="Ticket QR Code" 
+                         style="width: 260px; height: 260px; object-fit: contain; border-radius: 12px; background: white; padding: 12px;" />
+                  </div>
+                  <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2;">
+                    <div style="background: rgba(0,0,0,0.8); border: 1px solid rgba(168,85,247,0.4); padding: 16px 24px; border-radius: 16px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+                      <div style="font-size: 2rem; margin-bottom: 8px;">🤝</div>
+                      <h3 style="margin: 0 0 4px; color: #e9d5ff;">Ticket Transferred</h3>
+                      <p style="margin: 0; font-size: 0.85rem; color: #a8a29e;">To: {{ selectedTicket.transferred_to_email }}</p>
+                    </div>
+                  </div>
+                </div>
               } @else {
                 <div class="qr-wrapper" style="padding: 12px;">
                   <img [src]="'data:image/png;base64,' + qrData.qr_image_base64" alt="QR Code" class="qr-img">
                 </div>
+                @if (selectedTicket.transfer_status === 'received') {
+                }
               }
+
 
               @if (selectedTicket.status !== 'cancelled') {
                 <p style="font-family:monospace; color:var(--text-muted); font-size:0.75rem; margin-top:16px; word-break: break-all;">
@@ -280,26 +332,94 @@ import { LanyardComponent } from '../../../shared/components/lanyard/lanyard.com
                     </span>
                   </div>
                 </div>
-              } @else if (selectedTicket.status !== 'cancelled') {
+              } @else if (selectedTicket.status !== 'cancelled' && selectedTicket.transfer_status !== 'transferred' && selectedTicket.transfer_status !== 'received') {
                 <p style="color:var(--text-muted);font-size:0.8rem;margin-top:8px">
                   Show this QR code at the event entrance
                 </p>
               }
               
-              @if (selectedTicket.status === 'active' || selectedTicket.status === 'valid') {
-                <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-glass);">
-                  <button class="btn btn-outline-danger" style="width: 100%; border: 1px solid rgba(239, 68, 68, 0.5); color: #ef4444; background: rgba(239, 68, 68, 0.1); display: flex; align-items: center; justify-content: center; gap: 8px;" (click)="openCancelModal(selectedTicket, $event)">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                      <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
-                    </svg>
-                    Cancel Booking
-                  </button>
-                  <p style="font-size: 0.7rem; color: var(--text-muted); margin-top: 8px;">Cancellation policies apply based on event terms</p>
+              @if ((selectedTicket.status === 'active' || selectedTicket.status === 'valid') && selectedTicket.transfer_status !== 'transferred') {
+                <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-glass);">
+                  <div style="display: flex; gap: 14px; flex-direction: column;">
+                    @if (selectedTicket.transfer_status !== 'received' && isTransferable(selectedTicket)) {
+                      <button class="btn" style="flex: 1; display:flex; gap:10px; align-items:center; justify-content:center; background: linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(126, 34, 206, 0.3)); border: 1px solid rgba(168, 85, 247, 0.4); color: #e9d5ff; padding: 12px; border-radius: 14px; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 4px 15px rgba(168, 85, 247, 0.15);" 
+                              onmouseover="this.style.transform='translateY(-2px)'; this.style.background='linear-gradient(135deg, rgba(168, 85, 247, 0.35), rgba(126, 34, 206, 0.4))'; this.style.boxShadow='0 8px 25px rgba(168, 85, 247, 0.3)'" 
+                              onmouseout="this.style.transform='none'; this.style.background='linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(126, 34, 206, 0.3))'; this.style.boxShadow='0 4px 15px rgba(168, 85, 247, 0.15)'"
+                              (click)="showTransferModal = true">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                        </svg>
+                        <span style="font-weight: 600; letter-spacing: 0.3px;">Transfer Ticket</span>
+                      </button>
+                    } @else if (selectedTicket.transfer_status !== 'received' && !isTransferable(selectedTicket)) {
+                      <div style="padding: 14px; background: rgba(239, 68, 68, 0.08); border: 1px dashed rgba(239, 68, 68, 0.3); border-radius: 14px; color: #fca5a5; font-size: 0.82rem; text-align: center; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                        <span style="font-size: 1.1rem;">⏳</span>
+                        <span>Transfers closed (less than 10 mins to event)</span>
+                      </div>
+                    }
+                    <button class="btn" style="flex: 1; border: 1px solid rgba(239, 68, 68, 0.3); color: rgba(239, 68, 68, 0.85); background: rgba(239, 68, 68, 0.06); display: flex; align-items: center; justify-content: center; gap: 10px; padding: 12px; border-radius: 14px; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);" 
+                            onmouseover="this.style.background='rgba(239, 68, 68, 0.12)'; this.style.borderColor='rgba(239, 68, 68, 0.6)'; this.style.color='#ef4444'; this.style.transform='translateY(-2px)'" 
+                            onmouseout="this.style.background='rgba(239, 68, 68, 0.06)'; this.style.borderColor='rgba(239, 68, 68, 0.3)'; this.style.color='rgba(239, 68, 68, 0.85)'; this.style.transform='none'"
+                            (click)="openCancelModal(selectedTicket, $event)">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      <span style="font-weight: 500;">Cancel Booking</span>
+                    </button>
+                  </div>
+                  <p style="font-size: 0.72rem; color: var(--text-muted); margin-top: 18px; text-align: center; opacity: 0.7; letter-spacing: 0.2px;">Cancellation policies apply based on event terms</p>
                 </div>
               }
             </div>
           }
           </div>
+        </div>
+      </div>
+    }
+
+    <!-- Transfer Ticket Modal -->
+    @if (showTransferModal && selectedTicket) {
+      <div class="modal-backdrop" style="z-index: 1050; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);" (click)="showTransferModal = false">
+        <div class="glass-card animate-scaleIn" style="width: 100%; max-width: 420px; padding: 32px; position: relative" (click)="$event.stopPropagation()">
+          <button (click)="showTransferModal = false" style="position: absolute; top: 16px; right: 16px; background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer;">✕</button>
+          
+          <div style="text-align: center; margin-bottom: 24px;">
+            <div style="font-size: 2.5rem; margin-bottom: 12px;">🤝</div>
+            <h2 style="margin: 0 0 8px; font-size: 1.5rem;">Transfer Ticket</h2>
+            <p style="margin: 0; color: var(--text-secondary); font-size: 0.9rem; line-height: 1.5;">
+              Transfer this ticket securely to someone else. This action is <strong>irreversible</strong>.
+            </p>
+          </div>
+
+          <form (ngSubmit)="submitTransfer()" #transferForm="ngForm">
+            <div class="form-group" style="margin-bottom: 16px; text-align: left;">
+              <label style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 6px; display: block;">Recipient Full Name <span style="color:var(--danger)">*</span></label>
+              <input type="text" class="form-control" name="transferName" [(ngModel)]="transferReq.recipient_name" required placeholder="John Doe" style="background: rgba(0,0,0,0.2)">
+            </div>
+            <div class="form-group" style="margin-bottom: 16px; text-align: left;">
+              <label style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 6px; display: block;">Recipient Phone <span style="color:var(--danger)">*</span></label>
+              <input type="tel" class="form-control" name="transferPhone" [(ngModel)]="transferReq.recipient_phone" required placeholder="+91 9876543210" style="background: rgba(0,0,0,0.2)">
+            </div>
+            <div class="form-group" style="margin-bottom: 24px; text-align: left;">
+              <label style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 6px; display: block;">Recipient Email <span style="color:var(--danger)">*</span></label>
+              <input type="email" class="form-control" name="transferEmail" [(ngModel)]="transferReq.recipient_email" required placeholder="john@example.com" style="background: rgba(0,0,0,0.2)">
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; display: flex; align-items: flex-start; gap: 6px;">
+                <span>ℹ️</span> If they don't have an account, they can sign up with this email to access the ticket.
+              </div>
+            </div>
+
+            @if (transferError) {
+              <div class="alert alert-danger" style="margin-bottom: 20px; font-size: 0.85rem; text-align: left;">{{ transferError }}</div>
+            }
+
+            <button type="submit" class="btn btn-primary" style="width: 100%; background: linear-gradient(135deg, #a855f7, #7e22ce);" [disabled]="transferForm.invalid || transferLoading">
+              @if (transferLoading) {
+                <span class="spinner-sm" style="margin-right:8px"></span> Transferring...
+              } @else {
+                Confirm Transfer
+              }
+            </button>
+          </form>
         </div>
       </div>
     }
@@ -506,6 +626,12 @@ import { LanyardComponent } from '../../../shared/components/lanyard/lanyard.com
     .status-badge.active { color: #10b981; background: rgba(16, 185, 129, 0.1); }
     .status-badge.used { color: #60a5fa; background: rgba(96, 165, 250, 0.1); }
     .status-badge.cancelled { color: #f87171; background: rgba(248, 113, 113, 0.1); }
+    .status-badge.transferred { 
+      color: #e9d5ff; 
+      background: rgba(168, 85, 247, 0.15); 
+      border: 1px solid rgba(168, 85, 247, 0.2);
+    }
+
 
     .view-details {
       display: flex;
@@ -687,8 +813,20 @@ export class MyTicketsComponent implements OnInit, OnDestroy {
   cancellationPreview: CancellationPreview | null = null;
   cancelLoading = false;
   cancelError = '';
+  
+  // Transfer State
+  showTransferModal = false;
+  transferReq = {
+    recipient_name: '',
+    recipient_phone: '',
+    recipient_email: ''
+  };
+  transferLoading = false;
+  transferError = '';
+
   private statusPollInterval: any;
   dismissedEventIds = new Set<string>();
+  dismissedTransferIds = new Set<string>();
 
   // Notification logic
   get cancelledByOrganizerEvents() {
@@ -700,6 +838,17 @@ export class MyTicketsComponent implements OnInit, OnDestroy {
       }
     });
     return Array.from(uniqueEvents.values());
+  }
+
+  get receivedTicketsNotifs() {
+    return this.tickets.filter(t => t.transfer_status === 'received' && !this.dismissedTransferIds.has(t.id));
+  }
+
+  dismissTransfer(ticketId: string, event: MouseEvent) {
+    event.stopPropagation();
+    this.dismissedTransferIds.add(ticketId);
+    localStorage.setItem('dismissed_transfers', JSON.stringify(Array.from(this.dismissedTransferIds)));
+    this.cdr.detectChanges();
   }
 
   dismissNotification(eventId: string, event: MouseEvent) {
@@ -734,6 +883,26 @@ export class MyTicketsComponent implements OnInit, OnDestroy {
     }
   }
 
+  scrollToTicket(ticketId: string) {
+    const card = document.getElementById(`ticket-card-${ticketId}`);
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+      // Highlight with a green glow and scale effect
+      card.style.boxShadow = '0 0 50px rgba(34, 197, 94, 0.45)';
+      card.style.borderColor = 'rgba(34, 197, 94, 0.7)';
+      card.style.transform = 'translateY(-12px) scale(1.02)';
+      card.style.zIndex = '10';
+      
+      setTimeout(() => {
+        card.style.boxShadow = '';
+        card.style.borderColor = '';
+        card.style.transform = '';
+        card.style.zIndex = '';
+      }, 3000);
+    }
+  }
+
   constructor(
     private ticketService: TicketService,
     private route: ActivatedRoute,
@@ -749,9 +918,17 @@ export class MyTicketsComponent implements OnInit, OnDestroy {
         if (Array.isArray(ids)) {
           this.dismissedEventIds = new Set(ids);
         }
-      } catch (e) {
-        console.error('Error parsing dismissed notifications', e);
-      }
+      } catch (e) { }
+    }
+
+    const savedTransfers = localStorage.getItem('dismissed_transfers');
+    if (savedTransfers) {
+      try {
+        const ids = JSON.parse(savedTransfers);
+        if (Array.isArray(ids)) {
+          this.dismissedTransferIds = new Set(ids);
+        }
+      } catch (e) { }
     }
 
     this.ticketService.getMyTickets().subscribe({
@@ -777,7 +954,13 @@ export class MyTicketsComponent implements OnInit, OnDestroy {
     this.ticketService.getTicketQr(ticket.id).subscribe({
       next: (data) => {
         this.qrData = data;
-        this.selectedTicket = { ...this.selectedTicket!, status: data.ticket.status, scanned_at: data.ticket.scanned_at };
+        this.selectedTicket = { 
+          ...this.selectedTicket!, 
+          status: data.ticket.status, 
+          scanned_at: data.ticket.scanned_at,
+          transfer_status: data.ticket.transfer_status,
+          sender_name: data.ticket.sender_name
+        };
         this.qrLoading = false;
         this.cdr.detectChanges();
 
@@ -826,9 +1009,47 @@ export class MyTicketsComponent implements OnInit, OnDestroy {
     }
   }
 
+  submitTransfer() {
+    if (!this.selectedTicket) return;
+    this.transferLoading = true;
+    this.transferError = '';
+
+    this.ticketService.transferTicket(this.selectedTicket.id, this.transferReq).subscribe({
+      next: (updatedTicket) => {
+        // Update ticket in local array
+        const idx = this.tickets.findIndex(t => t.id === updatedTicket.id);
+        if (idx > -1) {
+          this.tickets[idx] = updatedTicket;
+        }
+        
+        // Update modal state
+        this.selectedTicket = updatedTicket;
+        
+        // Since transfer_status changed to 'transferred', updating qrData to trigger blurry view
+        if (this.qrData) {
+          this.qrData.ticket = updatedTicket;
+        }
+
+        this.showTransferModal = false;
+        this.transferLoading = false;
+        this.transferReq = { recipient_name: '', recipient_phone: '', recipient_email: '' };
+        
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.transferLoading = false;
+        this.transferError = err.error?.error || 'Failed to transfer ticket. Please try again.';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
   closeModal() {
     this.selectedTicket = null;
     this.qrData = null;
+    this.showTransferModal = false;
+    this.transferError = '';
+    this.transferReq = { recipient_name: '', recipient_phone: '', recipient_email: '' };
     this.stopStatusPolling();
   }
 
@@ -924,7 +1145,6 @@ export class MyTicketsComponent implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       },
       error: () => {
-        // Optionally show error
         this.cdr.detectChanges();
       }
     });
@@ -946,5 +1166,13 @@ export class MyTicketsComponent implements OnInit, OnDestroy {
     if (status === 'none') return false;
     if (status === 'pending') return step <= 2;
     return step <= 3;
+  }
+
+  isTransferable(ticket: Ticket | null): boolean {
+    if (!ticket || !ticket.event_date) return false;
+    const startTime = new Date(ticket.event_date).getTime();
+    const now = new Date().getTime();
+    const tenMinutesInMs = 10 * 60 * 1000;
+    return (startTime - now) > tenMinutesInMs;
   }
 }

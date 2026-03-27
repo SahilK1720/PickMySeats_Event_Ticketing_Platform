@@ -58,6 +58,33 @@ pub async fn register(
     let token = jwt::create_token(user.id, &user.email, &user.role, &state.config.jwt_secret)
         .map_err(|e| AppError::Internal(format!("Token generation failed: {}", e)))?;
 
+    // Link any pending ticket transfers sent to this email before account creation
+    let pending_ticket_ids: Vec<uuid::Uuid> = sqlx::query_scalar(
+        "SELECT ticket_id FROM pending_ticket_transfers WHERE recipient_email = $1"
+    )
+    .bind(&input.email.to_lowercase())
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    if !pending_ticket_ids.is_empty() {
+        for ticket_id in &pending_ticket_ids {
+            let _ = sqlx::query(
+                "UPDATE tickets SET user_id = $1 WHERE id = $2 AND transfer_status = 'transferred'"
+            )
+            .bind(user.id)
+            .bind(ticket_id)
+            .execute(&state.db)
+            .await;
+        }
+        let _ = sqlx::query(
+            "DELETE FROM pending_ticket_transfers WHERE recipient_email = $1"
+        )
+        .bind(&input.email.to_lowercase())
+        .execute(&state.db)
+        .await;
+    }
+
     Ok(Json(AuthResponse {
         token,
         user: UserPublic::from(user),

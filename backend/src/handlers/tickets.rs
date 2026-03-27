@@ -14,11 +14,12 @@ use crate::models::order::Order;
 use crate::models::seat::EventSeat;
 use crate::models::ticket::{
     CancellationPreview, CancellationResult, HoldRequest, HoldResponse, PurchaseRequest, Ticket,
-    TicketWithQr,
+    TicketWithQr, TransferRequest,
 };
 use crate::utils::jwt::Claims;
 use crate::utils::qr;
 use crate::AppState;
+
 
 /// POST /api/tickets/purchase — buy tickets for an event
 pub async fn purchase_tickets(
@@ -56,7 +57,7 @@ pub async fn purchase_tickets(
             return Err(AppError::BadRequest("You can purchase between 1 and 10 seats at once".to_string()));
         }
 
-        // Fraud: max 10 seats per user per event
+        // Fraud: max 5 seats per user per event
         let existing_count = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM tickets WHERE event_id = $1 AND user_id = $2 AND status = 'active'"
         )
@@ -65,9 +66,9 @@ pub async fn purchase_tickets(
         .fetch_one(&state.db)
         .await?;
 
-        if existing_count + quantity as i64 > 10 {
+        if existing_count + quantity as i64 > 5 {
             return Err(AppError::BadRequest(
-                format!("Maximum 10 tickets per user. You already have {}", existing_count)
+                format!("Maximum 5 tickets per user per event. You already have {}", existing_count)
             ));
         }
 
@@ -173,8 +174,8 @@ pub async fn purchase_tickets(
 
     // ── Standard (no seat-map) path ────────────────────────────────────────────
     let quantity = input.quantity;
-    if quantity <= 0 || quantity > 10 {
-        return Err(AppError::BadRequest("Quantity must be between 1 and 10".to_string()));
+    if quantity <= 0 || quantity > 5 {
+        return Err(AppError::BadRequest("Quantity must be between 1 and 5".to_string()));
     }
 
     let mut tx = state.db.begin().await?;
@@ -223,9 +224,9 @@ pub async fn purchase_tickets(
     .fetch_one(&mut *tx)
     .await?;
 
-    if existing_count + quantity as i64 > 10 {
+    if existing_count + quantity as i64 > 5 {
         return Err(AppError::BadRequest(
-            format!("Maximum 10 tickets per user. You already have {}", existing_count)
+            format!("Maximum 5 tickets per user per event. You already have {}", existing_count)
         ));
     }
 
@@ -296,8 +297,8 @@ pub async fn hold_tickets(
     Path(event_id): Path<Uuid>,
     Json(input): Json<HoldRequest>,
 ) -> Result<Json<HoldResponse>, AppError> {
-    if input.quantity <= 0 || input.quantity > 10 {
-        return Err(AppError::BadRequest("Hold quantity must be between 1 and 10".to_string()));
+    if input.quantity <= 0 || input.quantity > 5 {
+        return Err(AppError::BadRequest("Hold quantity must be between 1 and 5".to_string()));
     }
 
     let mut tx = state.db.begin().await?;
@@ -328,6 +329,22 @@ pub async fn hold_tickets(
         return Err(AppError::Conflict(format!(
             "Only {} tickets are currently available (others are held by someone else).",
             if available < 0 { 0 } else { available }
+        )));
+    }
+
+    // Per-user limit check: user's existing tickets + new hold must not exceed 5
+    let existing_user_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM tickets WHERE event_id = $1 AND user_id = $2 AND status = 'active'"
+    )
+    .bind(event_id)
+    .bind(claims.sub)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if existing_user_count + input.quantity as i64 > 5 {
+        return Err(AppError::BadRequest(format!(
+            "Maximum 5 tickets per user per event. You already have {}.",
+            existing_user_count
         )));
     }
 
@@ -385,6 +402,13 @@ pub async fn my_tickets(
             t.id, t.order_id, t.event_id, t.seat_id, t.user_id, t.qr_code_data, t.ticket_type,
             CASE WHEN t.status IN ('active', 'valid') AND e.event_end_time < NOW() THEN 'expired' ELSE t.status END as status,
             t.refund_status, t.scanned_at, t.created_at, t.cancellation_type,
+            CASE 
+                WHEN t.original_user_id = $1 THEN 'transferred'
+                WHEN t.original_user_id IS NOT NULL AND t.user_id = $1 THEN 'received'
+                ELSE t.transfer_status 
+            END as transfer_status,
+            t.transferred_to_name, t.transferred_to_phone,
+            t.transferred_to_email, t.original_user_id, t.transferred_at,
             e.title as event_title,
             e.event_date as event_date,
             e.refund_policy as event_refund_policy,
@@ -398,11 +422,13 @@ pub async fn my_tickets(
                 WHEN s.row_label IS NOT NULL AND s.seat_number IS NOT NULL 
                 THEN 'Row ' || s.row_label || ' - Seat ' || s.seat_number::text 
                 ELSE NULL 
-            END as seat_label
+            END as seat_label,
+            u.full_name as sender_name
         FROM tickets t
         JOIN events e ON t.event_id = e.id
         LEFT JOIN event_seats s ON t.seat_id = s.id
-        WHERE t.user_id = $1 
+        LEFT JOIN users u ON t.original_user_id = u.id
+        WHERE t.user_id = $1 OR t.original_user_id = $1
         ORDER BY t.created_at DESC
         "#
     )
@@ -437,6 +463,12 @@ pub async fn get_ticket_qr(
         scanned_at: Option<chrono::DateTime<chrono::Utc>>,
         created_at: chrono::DateTime<chrono::Utc>,
         cancellation_type: String,
+        transfer_status: String,
+        transferred_to_name: Option<String>,
+        transferred_to_phone: Option<String>,
+        transferred_to_email: Option<String>,
+        original_user_id: Option<Uuid>,
+        transferred_at: Option<chrono::DateTime<chrono::Utc>>,
         // Event fields
         event_title: String,
         event_images: Option<Vec<String>>,
@@ -448,6 +480,8 @@ pub async fn get_ticket_qr(
         // Seat fields
         row_label: Option<String>,
         seat_number: Option<i32>,
+        // Sender info
+        sender_name: Option<String>,
     }
 
     let data = sqlx::query_as::<_, TicketWithEventData>(
@@ -456,6 +490,13 @@ pub async fn get_ticket_qr(
             t.id, t.order_id, t.event_id, t.seat_id, t.user_id, t.qr_code_data, t.ticket_type,
             CASE WHEN t.status IN ('active', 'valid') AND e.event_end_time < NOW() THEN 'expired' ELSE t.status END as status,
             t.refund_status, t.scanned_at, t.created_at, t.cancellation_type,
+            CASE 
+                WHEN t.original_user_id = $2 THEN 'transferred'
+                WHEN t.original_user_id IS NOT NULL AND t.user_id = $2 THEN 'received'
+                ELSE t.transfer_status 
+            END as transfer_status,
+            t.transferred_to_name, t.transferred_to_phone,
+            t.transferred_to_email, t.original_user_id, t.transferred_at,
             e.title as event_title,
             e.image_urls as event_images,
             e.event_date as event_date,
@@ -464,11 +505,13 @@ pub async fn get_ticket_qr(
             e.location as event_location,
             e.google_maps_url,
             s.row_label,
-            s.seat_number
+            s.seat_number,
+            u.full_name as sender_name
         FROM tickets t
         JOIN events e ON t.event_id = e.id
         LEFT JOIN event_seats s ON t.seat_id = s.id
-        WHERE t.id = $1 AND t.user_id = $2
+        LEFT JOIN users u ON t.original_user_id = u.id
+        WHERE t.id = $1 AND (t.user_id = $2 OR t.original_user_id = $2)
         "#
     )
     .bind(id)
@@ -502,6 +545,12 @@ pub async fn get_ticket_qr(
         scanned_at: data.scanned_at,
         created_at: data.created_at,
         cancellation_type: data.cancellation_type,
+        transfer_status: data.transfer_status,
+        transferred_to_name: data.transferred_to_name,
+        transferred_to_phone: data.transferred_to_phone,
+        transferred_to_email: data.transferred_to_email,
+        original_user_id: data.original_user_id,
+        transferred_at: data.transferred_at,
         event_title: Some(data.event_title.clone()),
         event_date: Some(data.event_date),
         event_refund_policy: None,
@@ -512,6 +561,7 @@ pub async fn get_ticket_qr(
         event_location: Some(data.event_location.clone()),
         google_maps_url: data.google_maps_url.clone(),
         seat_label: seat_label.clone(),
+        sender_name: data.sender_name.clone(),
     };
     Ok(Json(TicketWithQr {
         ticket,
@@ -872,4 +922,134 @@ pub async fn sync_refund_status(
         refund_amount: Decimal::ZERO,
         message: format!("Refund status synced: {}", mapped_status),
     }))
+}
+
+/// GET /api/events/:id/my-ticket-count — number of active tickets user owns for this event
+pub async fn my_ticket_count_for_event(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(event_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM tickets WHERE event_id = $1 AND user_id = $2 AND status IN ('active', 'valid')"
+    )
+    .bind(event_id)
+    .bind(claims.sub)
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(serde_json::json!({ "count": count })))
+}
+
+/// POST /api/tickets/:id/transfer — transfer a ticket to another person
+pub async fn transfer_ticket(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<TransferRequest>,
+) -> Result<Json<Ticket>, AppError> {
+    // Validate input
+    let name = input.recipient_name.trim().to_string();
+    let phone = input.recipient_phone.trim().to_string();
+    let email = input.recipient_email.trim().to_lowercase();
+
+    if name.is_empty() || phone.is_empty() || email.is_empty() {
+        return Err(AppError::BadRequest("All transfer fields (name, phone, email) are required".to_string()));
+    }
+
+    // Start a transaction
+    let mut tx = state.db.begin().await?;
+
+    // Fetch the ticket — must belong to the current user
+    #[derive(sqlx::FromRow)]
+    struct TicketTransferCheck {
+        status: String,
+        transfer_status: String,
+        event_id: Uuid,
+        event_date: chrono::DateTime<chrono::Utc>,
+    }
+
+    let check = sqlx::query_as::<_, TicketTransferCheck>(
+        "SELECT t.status, t.transfer_status, t.event_id, e.event_date 
+         FROM tickets t 
+         JOIN events e ON t.event_id = e.id 
+         WHERE t.id = $1 AND t.user_id = $2 FOR UPDATE"
+    )
+    .bind(id)
+    .bind(claims.sub)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Ticket not found or does not belong to you".to_string()))?;
+
+    // Rule: Cannot transfer within 10 minutes of event start
+    let now = Utc::now();
+    let limit = check.event_date - chrono::Duration::minutes(10);
+    if now > limit {
+        return Err(AppError::BadRequest("Ticket transfers are only allowed until 10 minutes before the event starts.".to_string()));
+    }
+
+    if check.status != "active" && check.status != "valid" {
+        return Err(AppError::BadRequest(format!(
+            "Only active tickets can be transferred. This ticket is '{}'.",
+            check.status
+        )));
+    }
+
+    if check.transfer_status == "transferred" {
+        return Err(AppError::BadRequest("This ticket has already been transferred and cannot be transferred again.".to_string()));
+    }
+
+    // Check if recipient email belongs to an existing user
+    let existing_user_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM users WHERE email = $1"
+    )
+    .bind(&email)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let new_user_id = existing_user_id.unwrap_or(claims.sub);
+    // If no existing user, ticket stays with current user but is marked transferred
+    // and a pending transfer record is created for linking on signup
+
+    // Update the ticket
+    let updated_ticket = sqlx::query_as::<_, Ticket>(
+        r#"UPDATE tickets SET
+            transfer_status = 'transferred',
+            transferred_to_name = $1,
+            transferred_to_phone = $2,
+            transferred_to_email = $3,
+            original_user_id = $4,
+            transferred_at = NOW(),
+            user_id = $5
+        WHERE id = $6
+        RETURNING id, order_id, event_id, seat_id, user_id, qr_code_data, ticket_type, status,
+            refund_status, scanned_at, created_at, cancellation_type,
+            transfer_status, transferred_to_name, transferred_to_phone,
+            transferred_to_email, original_user_id, transferred_at"#
+    )
+    .bind(&name)
+    .bind(&phone)
+    .bind(&email)
+    .bind(claims.sub)  // original_user_id = current user
+    .bind(new_user_id)  // user_id = recipient (if exists) or same user if pending
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    // If recipient doesn't have an account yet, save a pending transfer
+    if existing_user_id.is_none() {
+        sqlx::query(
+            "INSERT INTO pending_ticket_transfers (ticket_id, recipient_email, recipient_name, recipient_phone) VALUES ($1, $2, $3, $4)"
+        )
+        .bind(id)
+        .bind(&email)
+        .bind(&name)
+        .bind(&phone)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+
+    Ok(Json(updated_ticket))
 }
