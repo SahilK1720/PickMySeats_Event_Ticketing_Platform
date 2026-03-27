@@ -15,6 +15,13 @@ export interface Ticket {
     refund_status: 'none' | 'pending' | 'refunded';
     scanned_at: string | null;
     created_at: string;
+    // Transfer fields
+    transfer_status?: 'none' | 'transferred' | 'received';
+    transferred_to_name?: string | null;
+    transferred_to_phone?: string | null;
+    transferred_to_email?: string | null;
+    transferred_at?: string | null;
+    sender_name?: string | null;
     // Joined fields
     event_title?: string;
     event_date?: string;
@@ -72,6 +79,12 @@ export interface ValidateResponse {
     attendee_name: string | null;
 }
 
+export interface TransferRequest {
+    recipient_name: string;
+    recipient_phone: string;
+    recipient_email: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class TicketService {
     constructor(private http: HttpClient) { }
@@ -112,6 +125,14 @@ export class TicketService {
 
     releaseHold(eventId: string, holdId: string): Observable<any> {
         return this.http.delete(`${environment.apiUrl}/events/${eventId}/hold/${holdId}`);
+    }
+
+    transferTicket(id: string, req: TransferRequest): Observable<Ticket> {
+        return this.http.post<Ticket>(`${environment.apiUrl}/tickets/${id}/transfer`, req);
+    }
+
+    getMyTicketCountForEvent(eventId: string): Observable<{ count: number }> {
+        return this.http.get<{ count: number }>(`${environment.apiUrl}/events/${eventId}/my-ticket-count`);
     }
 }
 

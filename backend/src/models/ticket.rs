@@ -17,6 +17,13 @@ pub struct Ticket {
     pub scanned_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub cancellation_type: String,
+    // Transfer fields
+    pub transfer_status: String,
+    pub transferred_to_name: Option<String>,
+    pub transferred_to_phone: Option<String>,
+    pub transferred_to_email: Option<String>,
+    pub original_user_id: Option<Uuid>,
+    pub transferred_at: Option<DateTime<Utc>>,
     // Joined fields
     #[sqlx(default)]
     pub event_title: Option<String>,
@@ -38,6 +45,8 @@ pub struct Ticket {
     pub google_maps_url: Option<String>,
     #[sqlx(default)]
     pub seat_label: Option<String>,
+    #[sqlx(default)]
+    pub sender_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -103,4 +112,11 @@ pub struct HoldResponse {
     pub hold_id: Uuid,
     pub quantity: i32,
     pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransferRequest {
+    pub recipient_name: String,
+    pub recipient_phone: String,
+    pub recipient_email: String,
 }

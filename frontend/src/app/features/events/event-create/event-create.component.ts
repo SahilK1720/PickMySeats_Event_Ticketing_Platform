@@ -273,28 +273,46 @@ import { ImageCropperComponent, CroppedEvent } from '../../../shared/image-cropp
           <!-- ──────────────────────────────────────────────────────────── -->
           
           @if (!loading && !eventForm.valid && eventForm.touched) {
-            <div class="validation-alert" style="margin-top:24px; margin-bottom:-12px; font-weight:600;">
+            <div class="validation-alert" style="margin-top:24px; margin-bottom:-12px; font-weight:600; color: #f87171; background: rgba(248, 113, 113, 0.1); padding: 12px; border-radius: 8px; border: 1px solid rgba(248, 113, 113, 0.2);">
               <span style="font-size:1.2rem">⚠️</span>
-              <span>Please fill all required fields correctly.</span>
+              @if (eventForm.controls['title']?.invalid) { <span>Title is required.</span> }
+              @else if (eventForm.controls['description']?.invalid) { <span>Description is required.</span> }
+              @else if (eventForm.controls['location']?.invalid) { <span>Location is required.</span> }
+              @else if (eventForm.controls['event_date']?.invalid) { <span>Event Start Date & Time is required.</span> }
+              @else if (eventForm.controls['gate_open_time']?.invalid) { <span>Gate Open Time is required.</span> }
+              @else if (eventForm.controls['event_end_time']?.invalid) { <span>Event End Time is required.</span> }
+              @else if (eventForm.controls['google_maps_url']?.invalid) { <span>Valid Google Maps URL is required.</span> }
+              @else if (eventForm.controls['max_tickets']?.invalid) { <span>Max Tickets is required.</span> }
+              @else if (eventForm.controls['ticket_price']?.invalid) { <span>Ticket Price is required.</span> }
+              @else if (eventForm.controls['refund_policy']?.invalid) { <span>Refund Policy is required.</span> }
+              @else { <span>Please fill all required fields correctly.</span> }
+            </div>
+          }
+
+          @if (successMessage) {
+            <div class="alert alert-success" style="margin-top:24px; margin-bottom: -12px; display: flex; align-items: center; gap: 10px;">
+              <span>{{ successMessage }}</span>
             </div>
           }
 
           <div class="form-actions-row">
-            <button type="submit" class="btn btn-secondary btn-lg flex-btn" (click)="isDraftSubmit = true"
-                    [disabled]="loading || !eventForm.valid || (seatMapEnabled && (!seatRows || !seatColumns || seatRows > 500 || seatColumns > 100)) || selectedFiles.length === 0">
+            <button type="button" class="btn btn-secondary btn-lg flex-btn" 
+                    (click)="submitAs('draft')"
+                    [disabled]="loading || !eventForm.valid || selectedFiles.length === 0 || successMessage">
               @if (loading && isDraftSubmit) {
                 <span class="spinner" style="width:18px;height:18px;border-width:2px"></span>
               } @else { 📝 Save as Draft }
             </button>
   
-            <button type="submit" class="btn btn-primary btn-lg flex-btn" (click)="isDraftSubmit = false"
-                    [disabled]="loading || !eventForm.valid || (seatMapEnabled && (!seatRows || !seatColumns || seatRows > 500 || seatColumns > 100)) || selectedFiles.length === 0">
+            <button type="button" class="btn btn-primary btn-lg flex-btn" 
+                    (click)="submitAs('published')"
+                    [disabled]="loading || !eventForm.valid || (seatMapEnabled && (!seatRows || !seatColumns || seatRows > 500 || seatColumns > 100)) || selectedFiles.length === 0 || successMessage">
               @if (loading && !isDraftSubmit) {
                 <span class="spinner" style="width:18px;height:18px;border-width:2px"></span>
               } @else { 🚀 Publish Event }
             </button>
   
-            <button type="button" class="btn btn-secondary btn-sm cancel-btn" (click)="cancel()">Cancel</button>
+            <button type="button" class="btn btn-secondary btn-sm cancel-btn" (click)="cancel()" [disabled]="loading || successMessage">Cancel</button>
           </div>
 
           @if (seatMapEnabled && seatRows && seatRows > 500) {
@@ -543,6 +561,7 @@ export class EventCreateComponent implements OnInit {
   isFreeEvent = false;
   loading = false;
   error = '';
+  successMessage = '';
   isDraftSubmit = false;
 
   // Seat map
@@ -610,6 +629,11 @@ export class EventCreateComponent implements OnInit {
       this.locationSuggestions = suggestions;
       this.cdr.detectChanges();
     });
+  }
+
+  submitAs(status: 'draft' | 'published') {
+    this.isDraftSubmit = (status === 'draft');
+    this.onSubmit();
   }
 
   enforceNumeric(event: Event) {
@@ -850,13 +874,20 @@ export class EventCreateComponent implements OnInit {
       next: (event) => {
         // After event created, upload images if any exist
         const continueFlow = () => {
-          if (this.seatMapEnabled) {
-            this.seatService.generateSeats(event.id).pipe(
-              finalize(() => { this.loading = false; this.router.navigate(['/events', event.id]); })
-            ).subscribe({ error: () => { this.router.navigate(['/events', event.id]); } });
-          } else {
+          this.successMessage = this.isDraftSubmit ? '✨ Draft saved successfully!' : '🚀 Event published successfully!';
+          this.cdr.detectChanges();
+
+          const navigate = () => {
             this.loading = false;
             this.router.navigate(['/events', event.id]);
+          };
+
+          if (this.seatMapEnabled) {
+            this.seatService.generateSeats(event.id).pipe(
+              finalize(() => { setTimeout(navigate, 1500); })
+            ).subscribe({ error: () => { navigate(); } });
+          } else {
+            setTimeout(navigate, 1500);
           }
         };
 

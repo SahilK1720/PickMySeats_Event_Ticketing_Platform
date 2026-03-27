@@ -100,13 +100,13 @@ export interface PaymentDetails {
               Cancel
             </button>
             
-            <button class="btn btn-primary razorpay-btn" (click)="payWithRazorpay()" [disabled]="processing">
+            <button class="btn btn-primary razorpay-btn" (click)="payment.totalAmount === 0 ? bookFree() : payWithRazorpay()" [disabled]="processing">
               @if (processing) {
                 <span class="spinner" style="width:18px;height:18px;border-width:2px;margin-right:8px"></span>
                 {{ statusMessage || 'Processing...' }}
               } @else {
                 <span class="btn-content">
-                  <span>Pay ₹{{ payment.totalAmount | number:'1.2-2' }}</span>
+                  <span>{{ payment.totalAmount === 0 ? 'Book Tickets' : 'Pay ₹' + (payment.totalAmount | number:'1.2-2') }}</span>
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8z"/></svg>
                 </span>
               }
@@ -289,6 +289,32 @@ export class PaymentModalComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     if (this.timer) clearInterval(this.timer);
+  }
+
+  bookFree() {
+    this.processing = true;
+    this.statusMessage = 'Booking tickets...';
+    this.error = '';
+    this.cdr.markForCheck();
+
+    // Skip Razorpay and go straight to verification with FREE markers
+    const dummyResponse = {
+      razorpay_order_id: 'FREE',
+      razorpay_payment_id: 'FREE',
+      razorpay_signature: 'FREE'
+    };
+    
+    const dummyOrder: RazorpayOrder = {
+      order_id: 'FREE',
+      amount: 0,
+      currency: 'INR',
+      key_id: '',
+      event_id: this.payment.event.id
+    };
+
+    setTimeout(() => {
+      this.verifyPayment(dummyResponse, dummyOrder);
+    }, 500);
   }
 
   payWithRazorpay() {

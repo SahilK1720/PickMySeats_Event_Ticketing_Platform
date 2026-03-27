@@ -253,7 +253,13 @@ import { ShinyTextComponent } from '../../../shared/components/shiny-text/shiny-
                 @if (purchaseError) { <div class="alert alert-danger">{{ purchaseError }}</div> }
 
                 <div class="quantity-selector-container" style="margin-bottom:24px">
-                  <label style="display:block;margin-bottom:12px;color:var(--text-secondary);font-size:0.9rem">Select Quantity</label>
+                  <label style="display:block;margin-bottom:8px;color:var(--text-secondary);font-size:0.9rem">Select Quantity</label>
+                  @if (ownedTicketCount > 0) {
+                    <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 10px;padding:6px 12px;background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.2);border-radius:8px;">
+                      🎟️ You already own <strong>{{ ownedTicketCount }}/5</strong> ticket{{ ownedTicketCount !== 1 ? 's' : '' }} for this event.
+                      @if (ownedTicketCount >= 5) { You have reached the maximum limit. }
+                    </p>
+                  }
                   <div class="quantity-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">
                     @for (n of getAvailableOptions(); track n) {
                       <button 
@@ -466,7 +472,8 @@ export class EventDetailComponent implements OnInit, OnDestroy {
   // Standard mode
   quantity = 1;
   ticketType: 'standard' | 'vip' = 'standard';
-  ticketQtyOptions = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  ticketQtyOptions = [1, 2, 3, 4, 5];
+  ownedTicketCount = 0;  // How many active tickets this user already owns for this event
 
   // Seat mode
   selectedSeats: EventSeat[] = [];
@@ -521,7 +528,25 @@ export class EventDetailComponent implements OnInit, OnDestroy {
         
         this.event = event;
         this.loading = false;
-        
+
+        // Fetch how many tickets this attendee already owns for this event
+        if (this.auth.isAuthenticated && !this.auth.isOrganizer) {
+          this.ticketService.getMyTicketCountForEvent(event.id).subscribe({
+            next: (res) => {
+              this.ownedTicketCount = res.count;
+              // Recalculate available options now that we know owned count
+              const max = this.getAvailableOptions();
+              if (max.length > 0 && this.quantity > max[max.length - 1]) {
+                this.quantity = max[max.length - 1];
+              } else if (max.length === 0) {
+                this.quantity = 0;
+              }
+              this.cdr.detectChanges();
+            },
+            error: () => { /* ignore — will just show full options */ }
+          });
+        }
+
         // Adjust quantity if current selection exceeds availability
         const max = this.getAvailableOptions();
         if (max.length > 0 && this.quantity > max[max.length - 1]) {
@@ -692,7 +717,8 @@ export class EventDetailComponent implements OnInit, OnDestroy {
   getAvailableOptions(): number[] {
     if (!this.event) return [];
     const available = this.event.max_tickets - this.event.tickets_sold;
-    const limit = Math.min(10, available);
+    const maxAllowed = Math.max(0, 5 - this.ownedTicketCount);  // Respect 5-ticket limit
+    const limit = Math.min(maxAllowed, available);
     const options = [];
     for (let i = 1; i <= limit; i++) {
       options.push(i);
