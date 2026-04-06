@@ -32,10 +32,11 @@ impl Config {
 
             server_host: env::var("SERVER_HOST")
                 .unwrap_or_else(|_| "0.0.0.0".to_string()),
-            server_port: env::var("SERVER_PORT")
+            server_port: env::var("PORT")
+                .or_else(|_| env::var("SERVER_PORT"))
                 .unwrap_or_else(|_| "8080".to_string())
                 .parse()
-                .expect("SERVER_PORT must be a valid u16"),
+                .expect("Port must be a valid u16"),
             razorpay_key_id: env::var("RAZORPAY_KEY_ID")
                 .unwrap_or_else(|_| String::new()),
             razorpay_key_secret: env::var("RAZORPAY_KEY_SECRET")
