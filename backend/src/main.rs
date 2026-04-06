@@ -93,7 +93,13 @@ async fn main() {
         .layer(cors);
 
     // Start server
-    let addr: SocketAddr = format!("{}:{}", config.server_host, config.server_port)
+    let host = std::env::var("SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+
+    let port = std::env::var("PORT")
+        .or_else(|_| std::env::var("SERVER_PORT"))
+        .unwrap_or_else(|_| "8080".to_string());
+
+    let addr: SocketAddr = format!("{}:{}", host, port)
         .parse()
         .expect("Invalid server address");
 
