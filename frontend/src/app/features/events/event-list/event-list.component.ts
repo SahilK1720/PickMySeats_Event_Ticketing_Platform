@@ -7,7 +7,6 @@ import { EventService, ScanEvent } from '../../../core/services/event.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { LocationService, LocationSuggestion } from '../../../core/services/location.service';
 import { environment } from '../../../../environments/environment';
-import { DomSanitizer, SafeStyle } from '@angular/platform-browser';
 import { ShinyTextComponent } from '../../../shared/components/shiny-text/shiny-text.component';
 import { TiltedCardComponent } from '../../../shared/components/tilted-card/tilted-card.component';
 
@@ -123,9 +122,9 @@ import { TiltedCardComponent } from '../../../shared/components/tilted-card/tilt
               
               <a [routerLink]="['/events', event.id]" class="event-card glass-card" style="text-decoration:none;color:inherit;display:flex;flex-direction:column;overflow:hidden; height:100%">
                 @if (event.image_urls && event.image_urls.length > 0) {
-                  <div [style]="getSafeStyle(event.image_urls[0])"
-                       style="height:240px;width:100%;background-size:cover;background-position:center;border-bottom:1px solid rgba(255,255,255,0.08)">
-                  </div>
+                <div [style.background-image]="'url(' + getImageUrl(event.image_urls[0]) + ')'"
+                     style="height:240px;width:100%;background-size:cover;background-position:center;border-bottom:1px solid rgba(255,255,255,0.08)">
+                </div>
                 }
                 
                 <div class="event-card-body" style="flex:1">
@@ -270,8 +269,7 @@ export class EventListComponent implements OnInit {
     private eventService: EventService,
     private locationService: LocationService,
     public auth: AuthService,
-    private cdr: ChangeDetectorRef,
-    private sanitizer: DomSanitizer
+    private cdr: ChangeDetectorRef
   ) { }
 
   // City Search State
@@ -373,9 +371,5 @@ export class EventListComponent implements OnInit {
     if (path.startsWith('http')) return path;
     const baseUrl = environment.apiUrl.replace('/api', '');
     return `${baseUrl}${path}`;
-  }
-
-  getSafeStyle(path: string): SafeStyle {
-    return this.sanitizer.bypassSecurityTrustStyle(`background-image: url('${this.getImageUrl(path)}')`);
   }
 }

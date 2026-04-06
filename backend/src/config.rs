@@ -29,6 +29,7 @@ impl Config {
                 .expect("JWT_SECRET must be set"),
             cors_origin: env::var("CORS_ORIGIN")
                 .unwrap_or_else(|_| "http://localhost:4200".to_string()),
+
             server_host: env::var("SERVER_HOST")
                 .unwrap_or_else(|_| "0.0.0.0".to_string()),
             server_port: env::var("SERVER_PORT")
@@ -36,9 +37,9 @@ impl Config {
                 .parse()
                 .expect("SERVER_PORT must be a valid u16"),
             razorpay_key_id: env::var("RAZORPAY_KEY_ID")
-                .unwrap_or_else(|_| "rzp_test_SRq25vAPGaBqRZ".to_string()),
+                .unwrap_or_else(|_| String::new()),
             razorpay_key_secret: env::var("RAZORPAY_KEY_SECRET")
-                .unwrap_or_else(|_| "J1fIJPcxFBpySnYhNfwAi6tZ".to_string()),
+                .unwrap_or_else(|_| String::new()),
             smtp_host: env::var("SMTP_HOST")
                 .unwrap_or_else(|_| "smtp.gmail.com".to_string()),
             smtp_port: env::var("SMTP_PORT")

@@ -72,11 +72,17 @@ async fn main() {
         redis_pool,
     };
 
-    // CORS configuration
+    // CORS configuration — allow only the configured origin
+    let cors_origin = config.cors_origin.clone();
     let cors = CorsLayer::new()
-        .allow_origin(Any)
+        .allow_origin(
+            cors_origin
+                .parse::<axum::http::HeaderValue>()
+                .unwrap_or(axum::http::HeaderValue::from_static("http://localhost:4200"))
+        )
         .allow_methods(Any)
         .allow_headers(Any);
+
 
     // Clone db pool for background task before state is consumed by the router
     let bg_db = state.db.clone();
