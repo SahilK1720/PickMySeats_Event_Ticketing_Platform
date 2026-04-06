@@ -1,0 +1,6 @@
+target
+node_modules
+uploads
+.env
+.git
+.gitignore
