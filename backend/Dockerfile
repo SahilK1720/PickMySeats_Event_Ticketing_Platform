@@ -5,16 +5,10 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
-COPY Cargo.toml Cargo.lock* ./
+# Copy everything from backend folder
+COPY . .
 
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release || true
-
-# 🔥 FIXED PATHS HERE
-COPY ./src ./src
-COPY ./migrations ./migrations
-
-RUN touch src/main.rs
+# Build
 RUN cargo build --release
 
 
