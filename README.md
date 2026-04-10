@@ -273,7 +273,7 @@ Required variables:
 
 ## 👤 Author
 
-**Sahil** — [@SahilK1720](https://github.com/SahilK1720)
+**Sahil Vithal Kharatmol** — [@SahilK1720](https://github.com/SahilK1720)
 
 ---
 
